@@ -132,18 +132,18 @@ function createArm() {
     const joint = i === 6 ? createEndEffector(jointRadius * 4, color) : createJoint(jointRadius, color);
     armGroup.add(joint);
     joins.push(joint);
+  }
 
-    if (i > 0) {
-      const link = createLink(linkLength, linkRadius, 0x00ff00);
-      links.push(link);
-      armGroup.add(link);
-    }
+  for (let i = 0; i < 6; i++) {
+    const link = createLink(linkLength, linkRadius, 0x00ff00);
+    links.push(link);
+    armGroup.add(link);
   }
 
   return armGroup;
 }
 
-function createJoint(radius, color, rect) {
+function createJoint(radius, color) {
   const geometry = new THREE.SphereGeometry(radius, 32, 32);
   const material = new THREE.MeshStandardMaterial({color});
   const joint = new THREE.Mesh(geometry, material);
