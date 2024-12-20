@@ -12,6 +12,7 @@ const armParams = {
   x: 0,
   y: 0,
   z: 0,
+  az: 0,
 };
 
 const links = [];
@@ -30,6 +31,7 @@ const guiA6 = gui.add(armParams, "a6", -180, 180);
 const guiX = gui.add(armParams, "x", -10, 10);
 const guiY = gui.add(armParams, "y", -10, 10);
 const guiZ = gui.add(armParams, "z", -10, 10);
+const guiAz = gui.add(armParams, "az", -180, 180);
 
 handleForwardKinematics(guiA1);
 handleForwardKinematics(guiA2);
@@ -79,35 +81,35 @@ function handleForwardKinematics(controller) {
 }
 
 function updatePosition() {
-  const positions = forwardKinematics();
+  const a1 = THREE.MathUtils.degToRad(armParams.a1);
+  const a2 = THREE.MathUtils.degToRad(armParams.a2);
+  const a3 = THREE.MathUtils.degToRad(armParams.a3);
+  const a4 = THREE.MathUtils.degToRad(armParams.a4);
+  const a5 = THREE.MathUtils.degToRad(armParams.a5);
+  const a6 = THREE.MathUtils.degToRad(armParams.a6);
 
-  const last = positions[positions.length - 1][0];
+  const {positions, angles} = forwardKinematics([a1, a2, a3, a4, a5, a6]);
+
+  const last = positions[positions.length - 1];
 
   armParams.x = round(last.x);
   armParams.y = round(last.y);
   armParams.z = round(last.z);
+  armParams.az = round(THREE.MathUtils.radToDeg(angles.z));
   guiX.updateDisplay();
   guiY.updateDisplay();
   guiZ.updateDisplay();
+  guiAz.updateDisplay();
 
   let previousJoint = null;
   for (let i = 0; i < 7; i++) {
     const joint = joins[i];
     const position = positions[i];
-    if (!position) continue;
-    if (Array.isArray(position)) {
-      const [p, p0, p1] = position;
-      joint.position.set(p.x, p.y, p.z);
-      joint.lookAt(previousJoint ? previousJoint.position : new THREE.Vector3(0, 0, 0));
+    joint.position.set(position.x, position.y, position.z);
+    joint.lookAt(previousJoint ? previousJoint.position : new THREE.Vector3(0, 0, 0));
 
-      // Compute the angle between the two vertices of the rectangular prism
-      const dx = p1.x - p0.x;
-      const dy = p1.y - p0.y;
-      const angle = Math.atan2(dy, dx);
-      joint.rotation.z = angle;
-    } else {
-      joint.position.set(position.x, position.y, position.z);
-    }
+    // Rotate end effector
+    if (i === 6) joint.rotation.z = angles.z;
 
     if (previousJoint) {
       const link = links[i - 1];
@@ -151,7 +153,7 @@ function createJoint(radius, color) {
 }
 
 function createEndEffector(radius, color) {
-  const geometry = new THREE.BoxGeometry(radius, radius / 8, radius);
+  const geometry = new THREE.BoxGeometry(radius, radius / 4, radius);
   const material = new THREE.MeshStandardMaterial({color});
   const joint = new THREE.Mesh(geometry, material);
   return joint;
@@ -170,14 +172,7 @@ function colorof(i) {
   else return 0x0000ff;
 }
 
-function forwardKinematics() {
-  const a1 = (armParams.a1 / 180) * Math.PI;
-  const a2 = (armParams.a2 / 180) * Math.PI;
-  const a3 = (armParams.a3 / 180) * Math.PI;
-  const a4 = (armParams.a4 / 180) * Math.PI;
-  const a5 = (armParams.a5 / 180) * Math.PI;
-  const a6 = (armParams.a6 / 180) * Math.PI;
-
+function forwardKinematics([a1, a2, a3, a4, a5, a6]) {
   const T1 = dhTransform(a1 - Math.PI / 2, -Math.PI / 2, linkLength, 0);
   const T2 = dhTransform(a2 - Math.PI / 2, 0, 0, linkLength);
   const T3 = dhTransform(a3, 0, 0, linkLength);
@@ -200,12 +195,17 @@ function forwardKinematics() {
   const p5 = new THREE.Vector3().applyMatrix4(T05);
   const p6 = new THREE.Vector3().applyMatrix4(T06);
 
-  // Compute the two vertices of the rectangular prism
   const size = jointRadius * 2;
   const p60 = new THREE.Vector3(-size, 0, -size).applyMatrix4(T06);
   const p61 = new THREE.Vector3(-size, 0, size).applyMatrix4(T06);
+  const dx = p61.x - p60.x;
+  const dy = p61.y - p60.y;
+  const angle = Math.atan2(dy, dx);
 
-  return [p0, p1, p2, p3, p4, p5, [p6, p60, p61]];
+  return {
+    positions: [p0, p1, p2, p3, p4, p5, p6],
+    angles: {z: angle},
+  };
 }
 
 function dhTransform(theta, alpha, d, a) {
