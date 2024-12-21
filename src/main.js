@@ -3,12 +3,12 @@ import GUI from "lil-gui";
 import "./style.css";
 
 const armParams = {
-  a1: 0,
-  a2: 0,
-  a3: 0,
+  a1: 175,
+  a2: -50,
+  a3: 64,
   a4: 0,
-  a5: 0,
-  a6: 0,
+  a5: 64,
+  a6: -30,
   x: 0,
   y: 0,
   z: 0,
@@ -30,7 +30,7 @@ const guiA5 = gui.add(armParams, "a5", -180, 180);
 const guiA6 = gui.add(armParams, "a6", -180, 180);
 const guiX = gui.add(armParams, "x", -10, 10);
 const guiY = gui.add(armParams, "y", -10, 10);
-const guiZ = gui.add(armParams, "z", -10, 10);
+const guiZ = gui.add(armParams, "z", 0, 10);
 const guiAz = gui.add(armParams, "az", -180, 180);
 
 handleForwardKinematics(guiA1);
@@ -39,6 +39,11 @@ handleForwardKinematics(guiA3);
 handleForwardKinematics(guiA4);
 handleForwardKinematics(guiA5);
 handleForwardKinematics(guiA6);
+
+handleInverseKinematics(guiX);
+handleInverseKinematics(guiY);
+handleInverseKinematics(guiZ);
+handleInverseKinematics(guiAz);
 
 const scene = new THREE.Scene();
 
@@ -77,10 +82,31 @@ function animate() {
 }
 
 function handleForwardKinematics(controller) {
-  controller.onChange(updatePosition);
+  controller.onChange(() => updatePosition(true));
 }
 
-function updatePosition() {
+function handleInverseKinematics(controller) {
+  controller.onChange(() => {
+    const {x, y, z, az} = armParams;
+    const {angles} = inverseKinematics([x, y, z, 0, 0, THREE.MathUtils.degToRad(az)]);
+    if (!angles) return;
+    armParams.a1 = angles[0] === null ? armParams.a1 : THREE.MathUtils.radToDeg(angles[0]);
+    armParams.a2 = angles[1] === null ? armParams.a2 : THREE.MathUtils.radToDeg(angles[1]);
+    armParams.a3 = angles[2] === null ? armParams.a3 : THREE.MathUtils.radToDeg(angles[2]);
+    armParams.a4 = angles[3] === null ? armParams.a4 : THREE.MathUtils.radToDeg(angles[3]);
+    armParams.a5 = angles[4] === null ? armParams.a5 : THREE.MathUtils.radToDeg(angles[4]);
+    armParams.a6 = angles[5] === null ? armParams.a6 : THREE.MathUtils.radToDeg(angles[5]);
+    guiA1.updateDisplay();
+    guiA2.updateDisplay();
+    guiA3.updateDisplay();
+    guiA4.updateDisplay();
+    guiA5.updateDisplay();
+    guiA6.updateDisplay();
+    updatePosition(false);
+  });
+}
+
+function updatePosition(updateGUI = true) {
   const a1 = THREE.MathUtils.degToRad(armParams.a1);
   const a2 = THREE.MathUtils.degToRad(armParams.a2);
   const a3 = THREE.MathUtils.degToRad(armParams.a3);
@@ -90,16 +116,17 @@ function updatePosition() {
 
   const {positions, angles} = forwardKinematics([a1, a2, a3, a4, a5, a6]);
 
-  const last = positions[positions.length - 1];
-
-  armParams.x = round(last.x);
-  armParams.y = round(last.y);
-  armParams.z = round(last.z);
-  armParams.az = round(THREE.MathUtils.radToDeg(angles.z));
-  guiX.updateDisplay();
-  guiY.updateDisplay();
-  guiZ.updateDisplay();
-  guiAz.updateDisplay();
+  if (updateGUI) {
+    const last = positions[positions.length - 1];
+    armParams.x = round(last.x);
+    armParams.y = round(last.y);
+    armParams.z = round(last.z);
+    armParams.az = round(THREE.MathUtils.radToDeg(angles.z));
+    guiX.updateDisplay();
+    guiY.updateDisplay();
+    guiZ.updateDisplay();
+    guiAz.updateDisplay();
+  }
 
   let previousJoint = null;
   for (let i = 0; i < 7; i++) {
@@ -208,6 +235,39 @@ function forwardKinematics([a1, a2, a3, a4, a5, a6]) {
   };
 }
 
+function inverseKinematics([x, y, z, rotateX, rotateY, rotateZ]) {
+  const dz = Math.sqrt(x * x + y * y);
+  const az = Math.atan2(x, y);
+  const angles = inverseKinematics3(z - linkLength, dz, linkLength, linkLength * 2, linkLength * 2);
+  return {
+    angles: [az, angles[0], angles[1], 0, angles[2], rotateZ],
+  };
+}
+
+function inverseKinematics2(px, py, a1, a2) {
+  const c2 = (px * px + py * py - a2 * a2 - a1 * a1) / (2 * a1 * a2);
+
+  if (c2 > 1) return [0, 0];
+  if (c2 < -1) return [0, Math.PI];
+
+  const s2 = Math.sqrt(1 - c2 * c2);
+  const t2 = Math.atan2(s2, c2);
+  const t1 = Math.atan2(py, px) - Math.atan2(a2 * s2, a1 + a2 * c2);
+  return [t1, t2];
+}
+
+function inverseKinematics3(px, py, a1, a2, a3) {
+  const r = Math.sqrt(px * px + py * py);
+  if (r > a1 && r < a1 + a2 + a3) {
+    const t1 = Math.atan2(py, px);
+    const npx = px - a1 * Math.cos(t1);
+    const npy = py - a1 * Math.sin(t1);
+    const [t2, t3] = inverseKinematics2(npx, npy, a2, a3);
+    return [t1, t2, t3];
+  }
+  return [null, null, null];
+}
+
 function dhTransform(theta, alpha, d, a) {
   // prettier-ignore
   return new THREE.Matrix4(
@@ -219,5 +279,5 @@ function dhTransform(theta, alpha, d, a) {
 }
 
 function round(n) {
-  return (Math.round(n * 1e12) / 1e12).toFixed(2);
+  return +(Math.round(n * 1e12) / 1e12).toFixed(2);
 }
