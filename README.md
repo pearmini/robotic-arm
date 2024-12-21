@@ -8,8 +8,6 @@ This project simulates a [Plant Robotic Arm](https://mymodernmet.com/david-bowen
 
 ![Preview](./img/preview.png)
 
----
-
 ## Getting Started
 
 You can explore the project in two ways:
